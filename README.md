@@ -13,6 +13,8 @@ Then open the printed local URL. `npm run build` produces a production build in 
 
 ## Features
 
+- **Working login** — a local, in-browser sign-in (name, email, password, role) gates the console. Session is remembered via `localStorage` when "keep me signed in" is checked, and Log Out actually clears it. This is a client-side demo login only — there's no server-side account creation or password verification, and that's stated on the login screen.
+- **Live nearby-resources map** — below the Report Detail panel, "Nearby Resources" asks for your browser location (or accepts manual lat/lon), then queries OpenStreetMap's free Overpass API for real hospitals, shelters/community sites, and food resources (food banks + supermarkets) within 8 km, plots them on a Leaflet/OpenStreetMap map with a distance-sorted list, category filters, and one-click Google Maps directions links.
 - **Live incident dashboard** — sortable report stream, sector map with clickable pins, and a detail panel with a real mission-approval workflow (Reported → Clustered → Planned → Dispatched → Resolved).
 - **Role-aware actions** — switching between Commander / Volunteer / Field changes what the primary action button does: commanders advance/approve missions, volunteers acknowledge assignments, field staff submit free-text field updates.
 - **Report intake form** — submit a new incident report (title, location, category, severity, source); it's assigned a new ID and immediately appears in the live stream and map.
@@ -24,4 +26,4 @@ Then open the printed local URL. `npm run build` produces a production build in 
 
 ## Tech
 
-React 18 + Vite, no external UI libraries — all styling is hand-rolled to preserve the retro aesthetic.
+React 18 + Vite. Leaflet + OpenStreetMap tiles power the nearby-resources map (no API key required); everything else is hand-rolled CSS to preserve the retro aesthetic.

@@ -1,98 +1,27 @@
 import React, { useState, useMemo, useEffect, useCallback } from "react";
+import {
+  CATEGORIES, SEVERITIES, SEVERITY_META, STAGES, NAV_ITEMS, SOURCES, ROLES,
+  SEED_REQUESTS, SEED_ORGS, capColor, orgCap, orgNote, timeAgo, nextIdFrom,
+  loadStoredSession, saveStoredSession,
+} from "./lib.js";
+import LoginScreen from "./LoginScreen.jsx";
+import NearbyResourcesMap from "./NearbyResourcesMap.jsx";
 
 /* ---------------------------------------------------------
    RELIEFMESH — "old style" build (now functional)
    Table layout, beveled buttons, Verdana/Times, navy+gray.
    Built like a late-90s / early-2000s county emergency-
    services site, wired up with real interactive state:
-   intake form, mission approval workflow, resource registry,
-   audit trail, search/severity filtering, and live timestamps.
+   login, intake form, mission approval workflow, resource
+   registry, audit trail, search/severity filtering, live
+   timestamps, and a live nearby-resources map.
 --------------------------------------------------------- */
 
-const CATEGORIES = [
-  { id: "medical", label: "Medical" },
-  { id: "shelter", label: "Shelter" },
-  { id: "food", label: "Food & Water" },
-  { id: "transport", label: "Transport" },
-];
-
-const SEVERITIES = [
-  { id: "critical", label: "Critical" },
-  { id: "high", label: "High" },
-  { id: "medium", label: "Medium" },
-];
-
-const SEVERITY_META = {
-  critical: { label: "CRITICAL", color: "#CC0000" },
-  high: { label: "HIGH", color: "#B36A00" },
-  medium: { label: "MEDIUM", color: "#000080" },
-};
-
-const STAGES = ["Reported", "Clustered", "Planned", "Dispatched"];
-
-const NAV_ITEMS = [
-  { id: "dashboard", label: "Incident Map" },
-  { id: "intake", label: "Report / Intake" },
-  { id: "evidence", label: "Evidence Log" },
-  { id: "planner", label: "Mission Planner" },
-  { id: "registry", label: "Resource Registry" },
-  { id: "audit", label: "Audit Trail" },
-];
-
-const SOURCES = ["Web", "SMS", "Call Center", "Field Team"];
-
-function minsAgo(n) {
-  return Date.now() - n * 60000;
-}
-
-const SEED_REQUESTS = [
-  { id: "RM-2291", title: "Family of 4 trapped, rising water", category: "medical", severity: "critical", stage: 0, loc: "Sector C3 - Elm & 9th", ts: minsAgo(2), source: "SMS", resolved: false, acknowledged: false },
-  { id: "RM-2287", title: "Elderly resident, needs insulin", category: "medical", severity: "critical", stage: 1, loc: "Sector B2 - Maple Ct", ts: minsAgo(6), source: "Field Team", resolved: false, acknowledged: false },
-  { id: "RM-2280", title: "Shelter overflow, 12 need beds", category: "shelter", severity: "high", stage: 1, loc: "Sector D1 - Civic Center", ts: minsAgo(14), source: "Web", resolved: false, acknowledged: false },
-  { id: "RM-2274", title: "Drinking water low, 30+ households", category: "food", severity: "high", stage: 2, loc: "Sector A4 - Pine Grove", ts: minsAgo(22), source: "Call Center", resolved: false, acknowledged: false },
-  { id: "RM-2266", title: "Road blocked, need transport to clinic", category: "transport", severity: "medium", stage: 0, loc: "Sector C1 - River Rd", ts: minsAgo(31), source: "SMS", resolved: false, acknowledged: false },
-  { id: "RM-2251", title: "Duplicate report — flooding, Oak Hollow", category: "shelter", severity: "medium", stage: 3, loc: "Sector B4 - Oak Hollow", ts: minsAgo(60), source: "Web", note: "Merged with RM-2240 (2 reports, 1 contradiction retained)", resolved: false, acknowledged: false },
-];
-
-const SEED_ORGS = [
-  { id: "org-1", name: "Cedar County Red Cross", type: "shelter", bedsUsed: 123, bedsTotal: 150 },
-  { id: "org-2", name: "Riverside Community Shelter", type: "shelter", bedsUsed: 62, bedsTotal: 150 },
-  { id: "org-3", name: "St. Anne's Relief Kitchen", type: "kitchen", cap: 95, note: "meals near capacity" },
-];
-
-function capColor(cap) {
-  if (cap > 85) return "#CC0000";
-  if (cap > 60) return "#B36A00";
-  return "#006600";
-}
-
-function orgCap(o) {
-  return o.type === "shelter" ? Math.round((o.bedsUsed / o.bedsTotal) * 100) : o.cap;
-}
-
-function orgNote(o) {
-  return o.type === "shelter" ? `${o.bedsUsed} / ${o.bedsTotal} beds` : o.note;
-}
-
-function timeAgo(ts, now) {
-  const diffMs = Math.max(0, now - ts);
-  const mins = Math.floor(diffMs / 60000);
-  if (mins < 1) return "just now";
-  if (mins < 60) return `${mins} min. ago`;
-  const hrs = Math.floor(mins / 60);
-  if (hrs < 24) return `${hrs} hr${hrs > 1 ? "s" : ""} ago`;
-  const days = Math.floor(hrs / 24);
-  return `${days} day${days > 1 ? "s" : ""} ago`;
-}
-
-function nextIdFrom(requests) {
-  const nums = requests.map((r) => parseInt(r.id.replace("RM-", ""), 10)).filter((n) => !Number.isNaN(n));
-  const max = nums.length ? Math.max(...nums) : 2200;
-  return `RM-${max + 1}`;
-}
+const ROLE_LABEL = Object.fromEntries(ROLES.map((r) => [r.id, r.label]));
 
 export default function App() {
-  const [role, setRole] = useState("commander");
+  const [session, setSession] = useState(() => loadStoredSession());
+  const [role, setRole] = useState(() => loadStoredSession()?.role || "commander");
   const [view, setView] = useState("dashboard");
   const [activeCats, setActiveCats] = useState([]);
   const [activeSevs, setActiveSevs] = useState([]);
@@ -115,9 +44,23 @@ export default function App() {
     return () => clearInterval(id);
   }, []);
 
-  const logAudit = useCallback((text) => {
-    setAudit((prev) => [{ id: `a${prev.length}-${Date.now()}`, ts: Date.now(), actor: role, text }, ...prev]);
+  const logAudit = useCallback((text, actorOverride) => {
+    setAudit((prev) => [{ id: `a${prev.length}-${Date.now()}`, ts: Date.now(), actor: actorOverride || role, text }, ...prev]);
   }, [role]);
+
+  const handleLogin = ({ name, email, role: loginRole, remember }) => {
+    const newSession = { name, email, role: loginRole };
+    setSession(newSession);
+    setRole(loginRole);
+    saveStoredSession(remember ? newSession : null);
+    logAudit(`${name} logged in as ${ROLE_LABEL[loginRole]}.`, loginRole);
+  };
+
+  const handleLogout = () => {
+    if (session) logAudit(`${session.name} logged out.`, session.role);
+    setSession(null);
+    saveStoredSession(null);
+  };
 
   const toggleCat = (id) =>
     setActiveCats((prev) => (prev.includes(id) ? prev.filter((c) => c !== id) : [...prev, id]));
@@ -244,6 +187,10 @@ export default function App() {
     }
     logAudit(`Registered new resource: ${form.name}.`);
   };
+
+  if (!session) {
+    return <LoginScreen onLogin={handleLogin} />;
+  }
 
   return (
     <div className="rm-page">
@@ -425,7 +372,7 @@ export default function App() {
                 </td>
                 <td align="right" style={{ verticalAlign: "top" }}>
                   <span style={{ fontSize: 11 }}>
-                    Logged in as: <b>J. Doe, Incident Commander</b> &nbsp;|&nbsp; <a className="rm-link" style={{ color: "#FFCC00" }}>Account</a> &nbsp;|&nbsp; <a className="rm-link" style={{ color: "#FFCC00" }}>Log Out</a>
+                    Logged in as: <b>{session.name}, {ROLE_LABEL[session.role]}</b> &nbsp;|&nbsp; <a className="rm-link" style={{ color: "#FFCC00" }}>Account</a> &nbsp;|&nbsp; <a className="rm-link" style={{ color: "#FFCC00" }} onClick={handleLogout}>Log Out</a>
                   </span>
                 </td>
               </tr>
@@ -458,7 +405,7 @@ export default function App() {
           <tbody>
             <tr>
               <td style={{ padding: "6px 10px", fontSize: 11 }}>
-                View console as:&nbsp;
+                Preview console permissions as:&nbsp;
                 {["field", "volunteer", "commander"].map((r) => (
                   <button
                     key={r}
@@ -737,6 +684,8 @@ function DashboardView(props) {
                 </div>
               </div>
             )}
+
+            <NearbyResourcesMap />
           </td>
 
           {/* Feed */}
